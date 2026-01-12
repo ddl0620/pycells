@@ -1,6 +1,9 @@
 
 local pc = require("pycells")
 
+-- Initialize highlighting for cell markers
+pc.setup_highlighting()
+
 vim.api.nvim_create_user_command("PyCellsOpen", function()
   pc.open_repl()
 end, {})

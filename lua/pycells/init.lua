@@ -4,6 +4,70 @@ local M = {}
 
 M.repl_chan = nil
 
+-- Setup highlighting for cell markers (marker + full-line background)
+function M.setup_highlighting(opts)
+  opts = opts or {}
+
+  -- Catppuccin-friendly defaults (avoid mauve/mantle)
+  local default_dark = {
+    marker = { fg = "#4c4f69", bold = true },
+    line   = { bg = "#eff1f5" },
+  }
+  -- Latte-friendly light palette (sky accent, light background)
+  local default_light = {
+    marker = { fg = "#cdd6f4", bold = true }, -- sky / blue accent
+    line   = { bg = "#1e1e2e" },             -- very light latte background
+  }
+
+  local defaults = (vim.o.background == "light") and default_light or default_dark
+  local marker_opts = opts.marker or defaults.marker
+  local line_opts = opts.line or defaults.line
+
+  -- create/apply highlight groups and reapply after colorscheme change
+  local function apply_hl()
+    vim.api.nvim_set_hl(0, "PyCellMarker", marker_opts)
+    vim.api.nvim_set_hl(0, "PyCellLine", line_opts)
+  end
+  apply_hl()
+  vim.api.nvim_create_autocmd("ColorScheme", { callback = apply_hl })
+
+  -- Use a dedicated namespace and buffer-local highlights (robust vs treesitter)
+  local ns = vim.api.nvim_create_namespace("pycells_cells")
+
+  local function refresh_buf(bufnr)
+    if not vim.api.nvim_buf_is_loaded(bufnr) then return end
+    vim.api.nvim_buf_clear_namespace(bufnr, ns, 0, -1)
+    local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+    for i, line in ipairs(lines) do
+      local s, e = line:find("#%s*%%+")
+      if s then
+        -- full-line background
+        vim.api.nvim_buf_add_highlight(bufnr, ns, "PyCellLine", i - 1, 0, -1)
+        -- highlight just the marker region on top
+        vim.api.nvim_buf_add_highlight(bufnr, ns, "PyCellMarker", i - 1, s - 1, e)
+      end
+    end
+  end
+
+  -- Autocommands: refresh on FileType and on buffer changes
+  local group = vim.api.nvim_create_augroup("PyCellsHighlight", { clear = false })
+  vim.api.nvim_create_autocmd("FileType", {
+    group = group,
+    pattern = "python",
+    callback = function(args)
+      local bufnr = args.buf
+      refresh_buf(bufnr)
+
+      -- refresh highlights for this buffer when it's edited or entered
+      vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI", "BufEnter", "BufWritePost" }, {
+        buffer = bufnr,
+        group = group,
+        callback = function() refresh_buf(bufnr) end,
+      })
+    end,
+  })
+end
+
 -- open side-by-side repl
 function M.open_repl(cmd)
   cmd = cmd or "ipython"     -- change to "python" if you want
